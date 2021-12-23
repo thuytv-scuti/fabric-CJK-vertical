@@ -1,17 +1,16 @@
 import { fabric } from 'fabric'
 export default class CJKTextbox extends fabric.IText {
-  vertical = true;
   textAlign = 'right';
   direction = 'rtl';
+  type = 'cjk-vertical'
 
   initDimensions() {
-    this.vertical = true;
     this.textAlign = 'right';
     this.direction = 'rtl';
     return super.initDimensions.call(this)
   }
 
-  _renderVerticalTextCommon(ctx, method) {
+  _renderTextCommon(ctx, method) {
     ctx.save();
     var lineHeights = 0, left = this._getLeftOffset(), top = this._getTopOffset();
     for (var i = 0, len = this._textLines.length; i < len; i++) {
@@ -31,15 +30,8 @@ export default class CJKTextbox extends fabric.IText {
     }
     ctx.restore();
   }
-  _renderTextCommon(ctx, method) {
-    if (this.vertical) {
-      return this._renderVerticalTextCommon(ctx, method);
-    }
 
-    return super._renderTextCommon.call(this, ctx, method);
-  }
-
-  _renderVerticalChars(method, ctx, line, left, top, lineIndex) {
+  _renderChars(method, ctx, line, left, top, lineIndex) {
     // set proper line offset
     var lineHeight = this.getHeightOfLine(lineIndex),
       char = '',
@@ -61,71 +53,55 @@ export default class CJKTextbox extends fabric.IText {
         i,
         char,
         left,
-        top + charBox.height * (i + 1) + space,
-        lineHeight
+        top + charBox.height * (i + 1) + space - 5,
+        0
       );
     }
     ctx.restore();
   }
 
-  _renderChars(method, ctx, line, left, top, lineIndex) {
-    if (this.vertical) {
-      return this._renderVerticalChars(method, ctx, line, left, top, lineIndex);
-    }
-
-    return super._renderChars.call(this, method, ctx, line, left, top, lineIndex);
-  }
-
   _getGraphemeBox(grapheme, lineIndex, charIndex, prevGrapheme, skipLeft) {
-    if (this.vertical) {
-      let box = super._getGraphemeBox.call(this, grapheme, lineIndex, charIndex, prevGrapheme, skipLeft)
-      box.top = 0;
-      if (this.charSpacing !== 0) {
-        box.height += this._getWidthOfCharSpacing();
-      }
-      if (charIndex > 0 && !skipLeft) {
-        const previousBox = this.__charBounds[lineIndex][charIndex - 1];
-        box.top = previousBox.top + previousBox.height;
-      }
-
-      return box;
+    let box = super._getGraphemeBox.call(this, grapheme, lineIndex, charIndex, prevGrapheme, skipLeft)
+    box.top = 0;
+    if (this.charSpacing !== 0) {
+      box.height += this._getWidthOfCharSpacing();
+    }
+    if (charIndex > 0 && !skipLeft) {
+      const previousBox = this.__charBounds[lineIndex][charIndex - 1];
+      box.top = previousBox.top + previousBox.height;
     }
 
-    return super._getGraphemeBox(grapheme, lineIndex, charIndex, prevGrapheme, skipLeft);
+    return box;
   }
 
   calcTextWidth() {
-    if (this.vertical) {
-      return super.calcTextHeight.call(this)
-    }
-
-    return super.calcTextWidth.call(this);
+    return super.calcTextHeight.call(this)
   }
 
   calcTextHeight() {
-    if (this.vertical) {
-      let longestLine = 0,
-        currentLineHeight = 0,
-        space = 0,
-        line = null;
+    let longestLine = 0,
+      currentLineHeight = 0,
+      space = 0;
 
-      if (this.charSpacing !== 0) {
-        space = this._getWidthOfCharSpacing();
-      }
-      for (var lineIndex = 1, len = this._textLines.length; lineIndex < len; lineIndex++) {
-        line = this._textLines[lineIndex];
-        currentLineHeight = 0;
-        for (let charIndex = 0; charIndex < line.length; charIndex++) {
-          currentLineHeight += this.getHeightOfChar(lineIndex, charIndex) + space;
-        }
-        if (currentLineHeight > longestLine) {
-          longestLine = currentLineHeight;
-        }
-      }
-      return longestLine;
+    if (this.charSpacing !== 0) {
+      space = this._getWidthOfCharSpacing();
     }
-
-    return super.calcTextHeight(this)
+    for (var lineIndex = 0, len = this._textLines.length; lineIndex < len; lineIndex++) {
+      if (!this.__charBounds[lineIndex]) {
+        this._measureLine(lineIndex);
+      }
+      currentLineHeight = 0;
+      for (let charIndex = 0, rlen = this._textLines[lineIndex].length; charIndex < rlen; charIndex++) {
+        if (this._textLines[lineIndex][charIndex]) {
+          currentLineHeight += this.__charBounds[lineIndex][charIndex].height + space;
+        }
+        // currentLineHeight += this.getHeightOfChar(lineIndex, charIndex) + space;
+      }
+      if (currentLineHeight > longestLine) {
+        longestLine = currentLineHeight;
+      }
+    }
+    return longestLine;
   }
 
   getSelectionStartFromPointer(e) {
@@ -171,7 +147,26 @@ export default class CJKTextbox extends fabric.IText {
         break;
       }
     }
-    return this._getNewSelectionStartFromOffset(mouseOffset, prevHeight, width, charIndex, jlen);
+    return this._getNewSelectionStartFromOffset(mouseOffset, prevHeight, height, charIndex, jlen);
+  }
+
+  _getNewSelectionStartFromOffset(mouseOffset, prevHeight, height, index, jlen) {
+    // we need Math.abs because when width is after the last char, the offset is given as 1, while is 0
+    var distanceBtwLastCharAndCursor = mouseOffset.y - prevHeight,
+      distanceBtwNextCharAndCursor = height - mouseOffset.y,
+      offset = distanceBtwNextCharAndCursor > distanceBtwLastCharAndCursor ||
+        distanceBtwNextCharAndCursor < 0 ? 0 : 1,
+      newSelectionStart = index + offset;
+    // if object is horizontally flipped, mirror cursor location from the end
+    if (this.flipX) {
+      newSelectionStart = jlen - newSelectionStart;
+    }
+
+    if (newSelectionStart > this._text.length) {
+      newSelectionStart = this._text.length;
+    }
+
+    return newSelectionStart;
   }
 
   _getCursorBoundariesOffsets(position) {
@@ -202,18 +197,34 @@ export default class CJKTextbox extends fabric.IText {
       leftOffset -= this._getWidthOfCharSpacing();
     }
     boundaries = {
-      top: lineLeftOffset + (topOffset > 0? topOffset : 0),
+      top: lineLeftOffset + (topOffset > 0 ? topOffset : 0),
       left: leftOffset,
     };
     if (this.direction === 'rtl') {
       boundaries.left *= -1;
     }
 
-    console.log({ ...boundaries })
     this.cursorOffsetCache = boundaries;
     return this.cursorOffsetCache;
   }
 
+  _getGraphemeBox(grapheme, lineIndex, charIndex, prevGrapheme, skipLeft) {
+    let box = super._getGraphemeBox(grapheme, lineIndex, charIndex, prevGrapheme, skipLeft);
+    box.top = 0;
+
+    if (charIndex > 0 && !skipLeft) {
+      const previousBox = this.__charBounds[lineIndex][charIndex - 1];
+      box.top = previousBox.top + previousBox.height;
+    }
+
+    return box;
+  }
+
+  /**
+   * 
+   * @param {*} boundaries 
+   * @param {CanvasRenderingContext2D} ctx 
+   */
   renderSelection(boundaries, ctx) {
     var selectionStart = this.inCompositionMode ? this.hiddenTextarea.selectionStart : this.selectionStart,
       selectionEnd = this.inCompositionMode ? this.hiddenTextarea.selectionEnd : this.selectionEnd,
@@ -224,39 +235,35 @@ export default class CJKTextbox extends fabric.IText {
       endLine = end.lineIndex,
       startChar = start.charIndex < 0 ? 0 : start.charIndex,
       endChar = end.charIndex < 0 ? 0 : end.charIndex;
-    console.log('[x] bounds', boundaries)
     for (var i = startLine; i <= endLine; i++) {
-      var lineOffset = this._getLineLeftOffset(i) || 0,
-        lineHeight = this.getHeightOfLine(i),
-        realLineHeight = 0, boxStart = 0, boxEnd = 0;
+      var lineHeight = this.getHeightOfLine(i),
+        boxStart = 0, boxEnd = 0;
 
       if (i === startLine) {
-        boxStart = this.__charBounds[startLine][startChar].left;
+        boxStart = this.__charBounds[startLine][startChar].top;
       }
       if (i >= startLine && i < endLine) {
-        boxEnd = isJustify && !this.isEndOfWrapping(i) ? this.width : this.getLineWidth(i) || 5; // WTF is this 5?
+        boxEnd = isJustify && !this.isEndOfWrapping(i) ? this.height : this.getLineWidth(i) || 5; // WTF is this 5?
       }
       else if (i === endLine) {
         if (endChar === 0) {
-          boxEnd = this.__charBounds[endLine][endChar].left;
+          boxEnd = this.__charBounds[endLine][endChar].top;
         }
         else {
           var charSpacing = this._getWidthOfCharSpacing();
-          boxEnd = this.__charBounds[endLine][endChar - 1].left
-            + this.__charBounds[endLine][endChar - 1].width - charSpacing;
+          boxEnd = this.__charBounds[endLine][endChar - 1].top
+            + this.__charBounds[endLine][endChar].height - charSpacing;
         }
       }
-      realLineHeight = lineHeight;
+      var drawStart = boundaries.left + lineHeight * i,
+        drawWidth = lineHeight,
+        drawHeight = boxEnd - boxStart;
+
       if (this.lineHeight < 1 || (i === endLine && this.lineHeight > 1)) {
-        lineHeight /= this.lineHeight;
+        drawWidth /= this.lineHeight;
       }
-      var drawStart = boundaries.left + lineOffset + boxStart,
-        drawWidth = boxEnd - boxStart,
-        drawHeight = lineHeight, extraTop = 0;
       if (this.inCompositionMode) {
         ctx.fillStyle = this.compositionColor || 'black';
-        drawHeight = 1;
-        extraTop = lineHeight;
       }
       else {
         ctx.fillStyle = this.selectionColor;
@@ -266,11 +273,36 @@ export default class CJKTextbox extends fabric.IText {
       }
       ctx.fillRect(
         drawStart,
-        boundaries.top + boundaries.topOffset + extraTop,
+        boundaries.top + boxStart,
         drawWidth,
-        drawHeight
+        drawHeight,
       );
-      boundaries.topOffset += realLineHeight;
     }
+  }
+
+
+  renderCursor(boundaries, ctx) {
+    var cursorLocation = this.get2DCursorLocation(),
+      lineIndex = cursorLocation.lineIndex,
+      charIndex = cursorLocation.charIndex > 0 ? cursorLocation.charIndex - 1 : 0,
+      charHeight = this.getValueOfPropertyAt(lineIndex, charIndex, 'fontSize'),
+      multiplier = this.scaleX * this.canvas.getZoom(),
+      cursorWidth = this.cursorWidth / multiplier,
+      topOffset = boundaries.topOffset,
+      dy = this.getValueOfPropertyAt(lineIndex, charIndex, 'deltaY');
+    topOffset += (1 - this._fontSizeFraction) * this.getHeightOfLine(lineIndex) / this.lineHeight
+      - charHeight * (1 - this._fontSizeFraction);
+
+    if (this.inCompositionMode) {
+      this.renderSelection(boundaries, ctx);
+    }
+    ctx.fillStyle = this.cursorColor || this.getValueOfPropertyAt(lineIndex, charIndex, 'fill');
+    ctx.globalAlpha = this.__isMousedown ? 1 : this._currentCursorOpacity;
+    ctx.fillRect(
+      boundaries.left + boundaries.leftOffset - charHeight,
+      topOffset + boundaries.top + dy - this.lineHeight,
+      charHeight,
+      cursorWidth,
+    );
   }
 }
