@@ -139,7 +139,7 @@ export default class CJKTextbox extends fabric.IText {
     line = this._textLines[lineIndex];
     for (var j = 0, jlen = line.length; j < jlen; j++) {
       prevHeight = height;
-      height += this.getHeightOfChar(lineIndex, j) + space;
+      height += this.getHeightOfChar(lineIndex, j) * this.scaleY + space;
       if (height <= mouseOffset.y) {
         charIndex++;
       }
