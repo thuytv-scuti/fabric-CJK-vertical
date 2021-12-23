@@ -2,7 +2,7 @@ import { fabric } from 'fabric'
 export default class CJKTextbox extends fabric.IText {
   textAlign = 'right';
   direction = 'rtl';
-  type = 'cjk-vertical'
+  typeObject = 'cjk-vertical'
 
   initDimensions() {
     this.textAlign = 'right';
@@ -33,11 +33,13 @@ export default class CJKTextbox extends fabric.IText {
 
   _renderChars(method, ctx, line, left, top, lineIndex) {
     // set proper line offset
-    var lineHeight = this.getHeightOfLine(lineIndex),
+    var localLineHeight = this.getHeightOfLine(lineIndex),
       char = '',
       charBox,
       space = this._getWidthOfCharSpacing(),
-      isLtr = this.direction === 'ltr', sign = this.direction === 'ltr' ? 1 : -1;
+      charLeft = 0,
+      charTop = 0,
+      isLtr = this.direction === 'ltr';
     ctx.save();
     // left -= lineHeight * this._fontSizeFraction / this.lineHeight;
     for (var i = 0, len = line.length - 1; i <= len; i++) {
@@ -47,15 +49,28 @@ export default class CJKTextbox extends fabric.IText {
       ctx.canvas.setAttribute('dir', isLtr ? 'ltr' : 'rtl');
       ctx.direction = isLtr ? 'ltr' : 'rtl';
       ctx.textAlign = isLtr ? 'left' : 'right';
+      let isSpecialChar = false;
+      let leftDiff = localLineHeight / this.lineHeight - charBox.width;
+      charLeft = left - leftDiff + Math.max(0, leftDiff - charBox.width);
+      charTop = top + charBox.top + charBox.height; 
+      if (['「', '」', 'ー'].includes(char)) {
+        isSpecialChar = true;
+        ctx.save();
+        ctx.rotate(-Math.PI/2);
+        ctx.translate(charLeft - (Math.PI / 2), -charTop * Math.PI / 2 + leftDiff + charBox.height / 2);
+      }
       this._renderChar(method,
         ctx,
         lineIndex,
         i,
         char,
-        left,
-        top + charBox.height * (i + 1) + space - 5,
+        charLeft,
+        charTop,
         0
       );
+      if (isSpecialChar) {
+        ctx.restore();
+      }
     }
     ctx.restore();
   }
