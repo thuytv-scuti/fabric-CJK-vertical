@@ -1,0 +1,154 @@
+<!doctype html />
+<html>
+<head>
+<title>3_howToSelectVerticalTextFromCanvas.html</title>
+ <style>
+  canvas#vwrMain{
+   border:1px solid black;
+  }
+  div#main{
+   margin:5px;
+  }
+ </style>
+ <script>
+ //nameSpace
+ function nameSpace(glb,spc){
+   var ns = spc.split('.');
+   var spcs = glb;
+   for(var i=0;i<ns.length;i++){
+     spcs = spcs[ns[i]] = new Object();
+   }
+   return spcs;
+ }
+
+ (function(global,_$){
+   _$.textCanvas = function(canvasId){
+     this.Canvas = global.document.getElementById(canvasId);
+     this.Canvas.width = 300;
+     this.Canvas.height = 300;
+     this.fontSize = 20;
+     this.charPointMap = new Array();
+     this.text = "";
+     this.putCharVertically = function(val){
+       var _cxt = this.Canvas.getContext("2d");
+       var hp = 0;
+       var hps = 0;
+       var vp = 0;
+       var vps = 0;
+       var chr = '';
+       var stx = 0;
+       this.text = val;
+       _cxt.clearRect(0,0,300,300);
+       _cxt.font = this.fontSize+"px Arial";
+       this.charPointMap = new Array();
+       for(var i=0;i<val.length;i++){
+         chr = val.charAt(i);
+         if( chr.match(/[、。]/) ){
+           hp = 0;
+         }else{
+           hp = _cxt.measureText(chr).width;
+         }
+         vp = this.fontSize;
+         stx = 260 - hps;
+         sty = this.fontSize + vps;
+         if(
+           ( this._selectArea.st <= i && i <=this._selectArea.ed )
+                                      ||
+           ( this._selectArea.ed <= i && i <=this._selectArea.st )
+         )
+         {
+           _cxt.strokeStyle = "blue";
+           _cxt.fillStyle =  "blue";
+         }else{
+           _cxt.strokeStyle = "black";
+           _cxt.fillStyle =  "black";
+         }
+         _cxt.fillText(chr, stx + this.fontSize - hp/2, sty );
+         this.charPointMap[this.charPointMap.length]=(
+          function(stx,sty,size,c){
+            return function(x,y){
+              return (stx+size/2 <= x && x <= stx+size*3/2 && sty-size <= y && y <= sty)?c:-1;
+            };
+         })(stx,sty,this.fontSize,i);
+         vps = vps + vp;
+         if(vps > this.Canvas.height - this.fontSize*2){
+           hps += this.fontSize;
+           vps = 0;
+         }
+       }
+     }
+     this._selectArea={st:-1,ed:-1};
+     this.Canvas.onmouseup = (
+       function(parent){
+         return function(e1){
+           var st,ed;
+           parent.Canvas.onmousemove = function(e2){};
+           if(parent._selectArea.st >= 0){
+             if(parent._selectArea.st < parent._selectArea.ed){
+               st = parent._selectArea.st;
+               ed = parent._selectArea.ed+1;
+             }else{
+               st = parent._selectArea.ed;
+               ed = parent._selectArea.st+1;
+             }
+             alert(parent.text.substring(st,ed));
+             console.log(parent.text.substring(st,ed));
+           }
+           parent._selectArea={st:-1,ed:-1};
+           parent.putCharVertically(parent.text);
+         }
+     })(this);
+     
+     this.selectText = function(num){
+       if(num < 0) return;
+       if(this._selectArea.st < 0)
+         this._selectArea.st = num;
+       this._selectArea.ed = num;
+     }
+
+     this.Canvas.onmousedown =(
+       function(parent){
+        return function(e1){
+          parent.selectText(_getCharPointFromMousePosition(e1,parent));
+          parent.Canvas.onmousemove = function(e2){
+            parent.putCharVertically(parent.text);
+            parent.selectText(_getCharPointFromMousePosition(e2,parent));
+          }
+        }
+       }
+     )(this);
+
+     _getCharPointFromMousePosition = function(e,parent){
+       var rect = e.target.getBoundingClientRect();
+       var x = e.clientX - rect.left;
+       var y = e.clientY - rect.top;
+       var hits=parent.charPointMap;
+       var hit=-1;
+       for(var i=0;i<hits.length;i++){
+         hit = hits[i](x,y);
+         if(hit>=0){
+           return hit;
+         }
+       }
+       return -1;
+     };
+   }
+ })(
+   this,
+   nameSpace(this,'aya.eiya.test')
+ );
+ </script>
+</head>
+
+<body onload="cvs = new aya.eiya.test.textCanvas('vwrMain');cvs.putCharVertically(document.getElementById('inMain').value);">
+ <h1>Canvasの縦書きの文字を選択する</h1>
+ <p>HTML5のCanvasの練習です。Canvasに表示された縦書きの文字を選択します。</p>
+ <p>文字列のドラッグした範囲をアラートで表示します。</p>
+ <div id="main">
+  <canvas id="vwrMain"></canvas>
+ </div>
+ <form>
+  <input type="text" id="inMain" onkeyup="cvs.putCharVertically(this.value);" value="HTML5のCanvasの練習です。テキストエリアの文字を縦書きでCanvasに表示します。" />
+ </form>
+</body>
+</html>
