@@ -1,9 +1,8 @@
 import { fabric } from 'fabric'
 
-const LATIN_CHARS_REGX = /[a-zA-Z\.]+/;
-const NUMBERIC_REGX = /[0-9]/;
+const LATIN_CHARS_REGX = /[a-zA-Z0-9\(\)]+/;
 const BRACKETS_REGX = /[\(\)]/;
-const JP_BRACKETS = /[ー「」『』（）〔〕［］｛｝｟｠〈〉《》【】〖〗〘〙〚〛゛゜。、・゠＝〜…•‥◦﹅﹆]/;
+const JP_BRACKETS = /[ー「」]/;
 export default class CJKTextbox extends fabric.IText {
   textAlign = 'right';
   direction = 'rtl';
@@ -40,41 +39,43 @@ export default class CJKTextbox extends fabric.IText {
     // set proper line offset
     var localLineHeight = this.getHeightOfLine(lineIndex),
       char = '',
+      nextChar = '',
       charBox,
       leftDiff = 0,
+      isRotated = false,
       charLeft = 0,
       charTop = 0,
-      isRotated = false,
       offsetLeft = 0,
-      shouldRotate = true,
       offsetTop = 0,
-      timeToRender = true,
-      nextChar = '',
+      willCharRotate = false,
+      shouldRender = true,
+      isAlphaNumeric = false,
       isLtr = this.direction === 'ltr';
     ctx.save();
     // left -= lineHeight * this._fontSizeFraction / this.lineHeight;
     for (var i = 0, len = line.length - 1; i <= len; i++) {
       char += line[i];
       nextChar = line[i + 1];
-      charBox = timeToRender ? this.__charBounds[lineIndex][i] : charBox;
-      timeToRender = !(nextChar && this._isLatin(char) && this._isLatin(nextChar));
-      offsetLeft = charBox.width;
-      offsetTop += charBox[!timeToRender ? 'width' : 'height'];
+      isAlphaNumeric = this._isLatin(char) && this._isLatin(line[i + 1])
+      shouldRender = !isAlphaNumeric;
+      charBox = this.__charBounds[lineIndex][i];
+      willCharRotate = this._willCharRotate(nextChar);
+      offsetLeft += charBox.width;
+      offsetTop = charBox.height;
 
-      if (timeToRender) {
-        // if (NUMBERIC_REGX.test(char) && char.length < 3) {
-        // shouldRotate = false;
-        // offsetLeft *= 2;
-        // offsetTop /= 2;
-        // }
+      if (willCharRotate) {
+        offsetLeft = charBox.height;
+        offsetTop = charBox.width;
+      }
 
-        ctx.canvas.setAttribute('dir', isLtr ? 'ltr' : 'rtl');
-        ctx.direction = isLtr ? 'ltr' : 'rtl';
-        ctx.textAlign = isLtr ? 'left' : 'right';
-        leftDiff = localLineHeight / this.lineHeight - offsetLeft;
-        charLeft = left - leftDiff + Math.max(0, leftDiff - offsetLeft);
-        charTop = top + charBox.top + offsetTop;
-        shouldRotate && (isRotated = this._rotateChar(ctx, char, charLeft, charTop, charBox));
+      ctx.canvas.setAttribute('dir', isLtr ? 'ltr' : 'rtl');
+      ctx.direction = isLtr ? 'ltr' : 'rtl';
+      ctx.textAlign = isLtr ? 'left' : 'right';
+      leftDiff = localLineHeight / this.lineHeight - offsetLeft;
+      charLeft = left - leftDiff + Math.max(0, leftDiff - offsetLeft);
+      charTop = top + charBox.top + offsetTop;
+      if (shouldRender) {
+        isRotated = this._rotateChar(ctx, char, charLeft, charTop, charBox);
         this._renderChar(method,
           ctx,
           lineIndex,
@@ -85,11 +86,15 @@ export default class CJKTextbox extends fabric.IText {
           0
         );
 
-        char = '';
-        offsetLeft = 0;
         offsetTop = 0;
-        shouldRotate = true;
-        isRotated && ctx.restore();
+        offsetLeft = 0;
+        char = '';
+      }
+
+      // restore to original styles
+      if (isRotated) {
+        ctx.restore();
+        isRotated = false;
       }
     }
     ctx.restore();
@@ -100,13 +105,14 @@ export default class CJKTextbox extends fabric.IText {
   }
 
   _isLatin(char) {
-    return LATIN_CHARS_REGX.test(char) || BRACKETS_REGX.test(char) || NUMBERIC_REGX.test(char);
+    return LATIN_CHARS_REGX.test(char) || BRACKETS_REGX.test(char);
   }
+
   _rotateChar(ctx, char, left, top, charBound) {
     let shouldRotate = JP_BRACKETS.test(char);
     let angle = -Math.PI / 2;
 
-    if (this._isLatin(char) || char === ' ') {
+    if (this._isLatin(char)) {
       shouldRotate = true;
       angle = Math.PI / 2;
     }
@@ -125,6 +131,7 @@ export default class CJKTextbox extends fabric.IText {
 
     return false;
   }
+
   calcTextWidth() {
     return super.calcTextHeight.call(this)
   }
@@ -132,6 +139,8 @@ export default class CJKTextbox extends fabric.IText {
   calcTextHeight() {
     let longestLine = 0,
       currentLineHeight = 0,
+      char = null,
+      charBox = null,
       space = 0;
 
     if (this.charSpacing !== 0) {
@@ -143,10 +152,13 @@ export default class CJKTextbox extends fabric.IText {
       }
       currentLineHeight = 0;
       for (let charIndex = 0, rlen = this._textLines[lineIndex].length; charIndex < rlen; charIndex++) {
-        if (this._textLines[lineIndex][charIndex]) {
-          currentLineHeight += this.__charBounds[lineIndex][charIndex].height + space;
+        char = this._textLines[lineIndex][charIndex];
+        charBox = this.__charBounds[lineIndex][charIndex];
+        if (this._willCharRotate(char)) {
+          currentLineHeight += charBox.width + space;
+        } else {
+          currentLineHeight += charBox.height + space;
         }
-        // currentLineHeight += this.getHeightOfChar(lineIndex, charIndex) + space;
       }
       if (currentLineHeight > longestLine) {
         longestLine = currentLineHeight;
@@ -162,9 +174,10 @@ export default class CJKTextbox extends fabric.IText {
       height = 0,
       charIndex = 0,
       lineIndex = 0,
-      charBox,
       lineHeight = 0,
       space = 0,
+      charBox = null,
+      offsetHeight = 0,
       line;
 
     if (this.charSpacing !== 0) {
@@ -190,13 +203,10 @@ export default class CJKTextbox extends fabric.IText {
     }
     line = this._textLines[lineIndex];
     for (var j = 0, jlen = line.length; j < jlen; j++) {
-      prevHeight = height;
       charBox = this.__charBounds[lineIndex][j];
-      if (this._isLatin(this._textLines[lineIndex][j])) {
-        height += charBox.width * this.scaleY + space;
-      } else {
-        height += charBox.height * this.scaleY + space;
-      }
+      prevHeight = height;
+      offsetHeight = this._willCharRotate(line[j]) ? charBox.width : charBox.height;
+      height += offsetHeight * this.scaleY + space;
       if (height <= mouseOffset.y) {
         charIndex++;
       }
@@ -222,7 +232,6 @@ export default class CJKTextbox extends fabric.IText {
     if (newSelectionStart > this._text.length) {
       newSelectionStart = this._text.length;
     }
-
     return newSelectionStart;
   }
 
@@ -237,27 +246,22 @@ export default class CJKTextbox extends fabric.IText {
       leftOffset = 0,
       boundaries,
       charBox,
+      char,
       cursorPosition = this.get2DCursorLocation(position);
     charIndex = cursorPosition.charIndex;
     lineIndex = cursorPosition.lineIndex;
+    charBox = this.__charBounds[lineIndex][charIndex];
+    char = this._textLines[lineIndex][charIndex];
+
     for (var i = 0; i < lineIndex; i++) {
       leftOffset += this.getHeightOfLine(i);
     }
 
     for (var i = 0; i < charIndex; i++) {
-      charBox = this.__charBounds[lineIndex][i];
-      if (this._isLatin(this._textLines[lineIndex][i])) {
-        // console.log(this._textLines[lineIndex])
-        // console.log('[x] char', this._textLines[lineIndex][i])
-        this.missingNewlineOffset(i - 1) && console.log(charBox.width)
-        topOffset += charBox.width;
-      } else {
-        topOffset += charBox.height;
-      }
+      topOffset += this._isLatin(char) ? charBox.width : charBox.height;
     }
 
     lineLeftOffset = this._getLineLeftOffset(lineIndex);
-    // bound && (leftOffset = bound.left);
     if (this.charSpacing !== 0 && charIndex === this._textLines[lineIndex].length) {
       leftOffset -= this._getWidthOfCharSpacing();
     }
@@ -276,11 +280,14 @@ export default class CJKTextbox extends fabric.IText {
   _getGraphemeBox(grapheme, lineIndex, charIndex, prevGrapheme, skipLeft) {
     let box = super._getGraphemeBox(grapheme, lineIndex, charIndex, prevGrapheme, skipLeft);
     box.top = 0;
-
     if (charIndex > 0 && !skipLeft) {
       const previousBox = this.__charBounds[lineIndex][charIndex - 1];
-      const isAlphaNumeric = this._isLatin(this._textLines[lineIndex][charIndex - 1]);
-      box.top = previousBox.top + previousBox[isAlphaNumeric ? 'width' : 'height'];
+      const previousGrapheme = this._textLines[lineIndex][charIndex - 1];
+      if (this._willCharRotate(previousGrapheme)) {
+        box.top = previousBox.top + previousBox.width;
+      } else {
+        box.top = previousBox.top + previousBox.height;
+      }
     }
 
     return box;
@@ -317,8 +324,12 @@ export default class CJKTextbox extends fabric.IText {
         }
         else {
           var charSpacing = this._getWidthOfCharSpacing();
-          boxEnd = this.__charBounds[endLine][endChar - 1].top
-            + this.__charBounds[endLine][endChar].height - charSpacing;
+          boxEnd = this.__charBounds[endLine][endChar - 1].top - charSpacing;
+          if (this._willCharRotate(this._textLines[endLine][endChar - 1])) {
+            boxEnd += this.__charBounds[endLine][endChar].width;
+          } else {
+            boxEnd += this.__charBounds[endLine][endChar].height;
+          }
         }
       }
       var drawStart = boundaries.left + lineHeight * i,
