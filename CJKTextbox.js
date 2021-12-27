@@ -344,11 +344,12 @@ export default class CJKTextbox extends fabric.IText {
         }
         else {
           var charSpacing = this._getWidthOfCharSpacing();
-          boxEnd = this.__charBounds[endLine][endChar - 1].top - charSpacing;
-          if (this._isLatin(this._textLines[endLine][endChar])) {
-            boxEnd += this.__charBounds[endLine][endChar].width;
+          const prevCharBox = this.__charBounds[endLine][endChar - 1];
+          boxEnd = prevCharBox.top - charSpacing;
+          if (this._isLatin(this._textLines[endLine][endChar - 1])) {
+            boxEnd += prevCharBox.width;
           } else {
-            boxEnd += this.__charBounds[endLine][endChar].height;
+            boxEnd += prevCharBox.height;
           }
         }
       }
@@ -401,5 +402,172 @@ export default class CJKTextbox extends fabric.IText {
       charHeight,
       cursorWidth,
     );
+  }
+
+
+  _renderTextLinesBackground(ctx) {
+    if (!this.textBackgroundColor && !this.styleHas('textBackgroundColor')) {
+      return;
+    }
+    var heightOfLine,
+      originalFill = ctx.fillStyle,
+      line, lastColor,
+      leftOffset = this._getLeftOffset() + 6,
+      lineTopOffset = this._getTopOffset(),
+      charBox, currentColor, path = this.path,
+      boxHeight = 0,
+      left = 0,
+      top = null,
+      char;
+
+    for (var i = 0, len = this._textLines.length; i < len; i++) {
+      heightOfLine = this.getHeightOfLine(i);
+      left += heightOfLine;
+      if (!this.textBackgroundColor && !this.styleHas('textBackgroundColor', i)) {
+        continue;
+      }
+      line = this._textLines[i];
+      boxHeight = 0;
+      lastColor = this.getValueOfPropertyAt(i, 0, 'textBackgroundColor');
+      top = this.__charBounds[i][0].top;
+      for (var j = 0, jlen = line.length; j < jlen; j++) {
+        char = line[j];
+        charBox = this.__charBounds[i][j];
+        currentColor = this.getValueOfPropertyAt(i, j, 'textBackgroundColor');
+
+        if (currentColor !== lastColor) {
+          ctx.fillStyle = lastColor;
+          if (lastColor) {
+            ctx.fillRect(
+              leftOffset - left,
+              lineTopOffset + top,
+              heightOfLine / this.lineHeight,
+              boxHeight
+            )
+          }
+
+          if (this._isLatin(char)) {
+            boxHeight = charBox.width;
+          } else {
+            boxHeight = charBox.height;
+          }
+          lastColor = currentColor;
+          top = charBox.top;
+        }
+        else {
+          if (this._isLatin(char)) {
+            boxHeight += charBox.kernedWidth;
+          } else {
+            boxHeight += charBox.height;
+          }
+        }
+      }
+      if (currentColor && !path) {
+        ctx.fillStyle = currentColor;
+        ctx.fillRect(
+          leftOffset - left,
+          lineTopOffset + top,
+          heightOfLine / this.lineHeight,
+          boxHeight
+        );
+      }
+    }
+    ctx.fillStyle = originalFill;
+    // if there is text background color no
+    // other shadows should be casted
+    this._removeShadow(ctx);
+  }
+
+  _renderTextDecoration(ctx, type) {
+    if (!this[type] && !this.styleHas(type)) {
+      return;
+    }
+    let heightOfLine, size, _size,
+      lineLeftOffset, dy, _dy,
+      drawLeft = 0,
+      drawTop = 0,
+      boxHeight = 0,
+      char = '',
+      line, lastDecoration,
+      leftOffset = this._getLeftOffset(),
+      topOffset = this._getTopOffset(),
+      boxStart, boxWidth, charBox, currentDecoration,
+      currentFill, lastFill,
+      offsetY = this.offsets[type];
+
+    for (var i = 0, len = this._textLines.length; i < len; i++) {
+      heightOfLine = this.getHeightOfLine(i);
+      drawLeft += heightOfLine;
+      if (!this[type] && !this.styleHas(type, i)) { continue; }
+
+      boxHeight = 0;
+      line = this._textLines[i];
+      lineLeftOffset = this._getLineLeftOffset(i);
+      boxStart = 0;
+      boxWidth = 0;
+      lastDecoration = this.getValueOfPropertyAt(i, 0, type);
+      lastFill = this.getValueOfPropertyAt(i, 0, 'fill');
+      drawTop = this.__charBounds[i][0].top;
+
+      size = heightOfLine / this.lineHeight;
+      dy = this.getValueOfPropertyAt(i, 0, 'deltaY');
+      for (var j = 0, jlen = line.length; j < jlen; j++) {
+        charBox = this.__charBounds[i][j];
+        char = line[j];
+        currentDecoration = this.getValueOfPropertyAt(i, j, type);
+        currentFill = this.getValueOfPropertyAt(i, j, 'fill');
+        _size = this.getHeightOfChar(i, j);
+        _dy = this.getValueOfPropertyAt(i, j, 'deltaY');
+
+        // (!lastDecoration) && (drawTop = charBox.top);
+
+        if (
+          (currentDecoration !== lastDecoration || currentFill !== lastFill || _size !== size || _dy !== dy)
+          && boxWidth > 0
+        ) {
+          if (lastDecoration && lastFill) {
+            ctx.fillStyle = lastFill;
+            ctx.fillRect(
+              leftOffset - drawLeft + _size * offsetY,
+              topOffset + drawTop,
+              this.fontSize / 15,
+              boxHeight,
+            );
+          }
+          boxStart = charBox.left;
+          boxWidth = charBox.width;
+          if (this._isLatin(char)) {
+            boxHeight = charBox.width;
+          } else {
+            boxHeight = charBox.height;
+          }
+          lastDecoration = currentDecoration;
+          lastFill = currentFill;
+          size = _size;
+          dy = _dy;
+          drawTop = charBox.top;
+        }
+        else {
+          if (this._isLatin(char)) {
+            boxHeight += charBox.kernedWidth;
+          } else {
+            boxHeight += charBox.height;
+          }
+          boxWidth += charBox.kernedWidth;
+        }
+      }
+      ctx.fillStyle = currentFill;
+      if (currentDecoration && currentFill) {
+        ctx.fillRect(
+          leftOffset - drawLeft + _size * offsetY,
+          topOffset + drawTop,
+          this.fontSize / 15,
+          boxHeight,
+        );
+      }
+    }
+    // if there is text background color no
+    // other shadows should be casted
+    this._removeShadow(ctx);
   }
 }
