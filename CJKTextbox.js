@@ -1,6 +1,6 @@
 import { fabric } from 'fabric'
 
-const LATIN_CHARS_REGX = /[a-zA-Z\.]+/;
+const LATIN_CHARS_REGX = /[a-zA-Z\.\s]+/;
 const NUMBERIC_REGX = /[0-9]/;
 const BRACKETS_REGX = /[\(\)]/;
 const JP_BRACKETS = /[ー「」『』（）〔〕［］｛｝｟｠〈〉《》【】〖〗〘〙〚〛゛゜。、・゠＝〜…•‥◦﹅﹆]/;
@@ -36,60 +36,107 @@ export default class CJKTextbox extends fabric.IText {
     ctx.restore();
   }
 
-  _renderChars(method, ctx, line, left, top, lineIndex) {
-    // set proper line offset
-    var localLineHeight = this.getHeightOfLine(lineIndex),
-      char = '',
-      charBox,
-      leftDiff = 0,
-      charLeft = 0,
-      charTop = 0,
-      isRotated = false,
-      offsetLeft = 0,
-      shouldRotate = true,
-      offsetTop = 0,
-      timeToRender = true,
-      nextChar = '',
+  _renderCJKChars(method, ctx, lineIndex, charIndex, left, top) {
+    let charbox = this.__charBounds[lineIndex][charIndex],
+      char = this._textLines[lineIndex][charIndex],
+      localLineHeight = this.getHeightOfLine(lineIndex),
+      offsetLeft = charbox.height,
+      offsetTop = charbox.width,
+      leftDiff = localLineHeight / this.lineHeight - offsetLeft,
+      charLeft = left - leftDiff + Math.max(0, leftDiff - offsetLeft),
+      charTop = top + charbox.top + offsetTop,
       isLtr = this.direction === 'ltr';
+
     ctx.save();
-    // left -= lineHeight * this._fontSizeFraction / this.lineHeight;
+
+    ctx.canvas.setAttribute('dir', isLtr ? 'ltr' : 'rtl');
+    ctx.direction = isLtr ? 'ltr' : 'rtl';
+    ctx.textAlign = isLtr ? 'left' : 'right';
+
+    if (JP_BRACKETS.test(char)) {
+      const tx = charLeft - charbox.width / 2,
+        ty = charTop - charbox.height / 2 + 3; // somehow, the char is a bit higher after rotation;
+      ctx.translate(tx, ty);
+      ctx.rotate(-Math.PI / 2);
+      ctx.translate(-tx, -ty);
+      // ctx.fillStyle = 'red';
+      // ctx.fillRect(
+      //   charLeft - charbox.width,
+      //   charTop - charbox.height,
+      //   charbox.width,
+      //   charbox.height
+      // )
+    }
+
+    this._renderChar(method,
+      ctx,
+      lineIndex,
+      charIndex,
+      char,
+      charLeft,
+      charTop,
+      0
+    );
+
+    ctx.restore();
+  }
+
+  _renderAlphaNumberic(method, ctx, lineIndex, startIndex, endIndex, left, top) {
+    let charsBox = { ...this.__charBounds[lineIndex][startIndex] },
+      chars = '',
+      localLineHeight = this.getHeightOfLine(lineIndex),
+      offsetLeft = charsBox.height,
+      offsetTop = this.lineHeight,
+      leftDiff = localLineHeight / this.lineHeight - offsetLeft,
+      charLeft = left - leftDiff + Math.max(0, leftDiff - offsetLeft),
+      charTop = top + charsBox.top + offsetTop;
+
+    for (let i = startIndex; i <= endIndex; i++) {
+      chars += this._textLines[lineIndex][i];
+      charsBox.width = charsBox.width + this.__charBounds[lineIndex][i].width;
+      if (charsBox.height < this.__charBounds[lineIndex][i].height) {
+        charsBox.height = this.__charBounds[lineIndex][i].height;
+      }
+    }
+
+    ctx.save();
+    const tx = charLeft,
+      ty = charTop;
+    ctx.translate(tx, ty);
+    ctx.rotate(Math.PI / 2);
+    ctx.translate(-tx, -ty);
+    this._renderChar(method,
+      ctx,
+      lineIndex,
+      startIndex,
+      chars,
+      charLeft,
+      charTop + charsBox.height - 3,
+      0
+    );
+    ctx.restore();
+  }
+
+  _renderChars(method, ctx, line, left, top, lineIndex) {
+    let timeToRender,
+      startChar = null,
+      endChar = null;
+    ctx.save();
     for (var i = 0, len = line.length - 1; i <= len; i++) {
-      char += line[i];
-      nextChar = line[i + 1];
-      charBox = timeToRender ? this.__charBounds[lineIndex][i] : charBox;
-      timeToRender = !(nextChar && this._isLatin(char) && this._isLatin(nextChar));
-      offsetLeft = charBox.width;
-      offsetTop += charBox[!timeToRender ? 'width' : 'height'];
-
-      if (timeToRender) {
-        // if (NUMBERIC_REGX.test(char) && char.length < 3) {
-        // shouldRotate = false;
-        // offsetLeft *= 2;
-        // offsetTop /= 2;
-        // }
-
-        ctx.canvas.setAttribute('dir', isLtr ? 'ltr' : 'rtl');
-        ctx.direction = isLtr ? 'ltr' : 'rtl';
-        ctx.textAlign = isLtr ? 'left' : 'right';
-        leftDiff = localLineHeight / this.lineHeight - offsetLeft;
-        charLeft = left - leftDiff + Math.max(0, leftDiff - offsetLeft);
-        charTop = top + charBox.top + offsetTop;
-        shouldRotate && (isRotated = this._rotateChar(ctx, char, charLeft, charTop, charBox));
-        this._renderChar(method,
-          ctx,
-          lineIndex,
-          i,
-          char,
-          charLeft,
-          charTop,
-          0
-        );
-
-        char = '';
-        offsetLeft = 0;
-        offsetTop = 0;
-        shouldRotate = true;
-        isRotated && ctx.restore();
+      if (!this._isLatin(line[i])) {
+        this._renderCJKChars(method, ctx, lineIndex, i, left, top);
+      } else {
+        timeToRender = (i === len || !this._isLatin(line[i + 1]));
+        if (startChar === null && this._isLatin(line[i])) {
+          startChar = i;
+        };
+        if (timeToRender) {
+          endChar = i;
+          this._renderAlphaNumberic(method, ctx, lineIndex, startChar, endChar, left, top);
+          timeToRender = false;
+          startChar = null;
+          endChar = null;
+        }
       }
     }
     ctx.restore();
@@ -102,29 +149,7 @@ export default class CJKTextbox extends fabric.IText {
   _isLatin(char) {
     return LATIN_CHARS_REGX.test(char) || BRACKETS_REGX.test(char) || NUMBERIC_REGX.test(char);
   }
-  _rotateChar(ctx, char, left, top, charBound) {
-    let shouldRotate = JP_BRACKETS.test(char);
-    let angle = -Math.PI / 2;
 
-    if (this._isLatin(char) || char === ' ') {
-      shouldRotate = true;
-      angle = Math.PI / 2;
-    }
-
-    if (shouldRotate) {
-      ctx.save();
-      const tx = left - charBound.width / 2,
-        ty = top - charBound.height / 2 + 3; // somehow, the char is a bit higher after rotation;
-      ctx.translate(tx, ty);
-      ctx.rotate(angle);
-      ctx.translate(-tx, -ty);
-      ctx.fillStyle = 'red';
-      ctx.fillRect(left - charBound.width, top - charBound.height, charBound.width, charBound.height)
-      return true;
-    }
-
-    return false;
-  }
   calcTextWidth() {
     return super.calcTextHeight.call(this)
   }
@@ -132,6 +157,7 @@ export default class CJKTextbox extends fabric.IText {
   calcTextHeight() {
     let longestLine = 0,
       currentLineHeight = 0,
+      char,
       space = 0;
 
     if (this.charSpacing !== 0) {
@@ -143,10 +169,14 @@ export default class CJKTextbox extends fabric.IText {
       }
       currentLineHeight = 0;
       for (let charIndex = 0, rlen = this._textLines[lineIndex].length; charIndex < rlen; charIndex++) {
-        if (this._textLines[lineIndex][charIndex]) {
-          currentLineHeight += this.__charBounds[lineIndex][charIndex].height + space;
+        char = this._textLines[lineIndex][charIndex];
+        if (char) {
+          if (this._isLatin(char)) {
+            currentLineHeight += this.__charBounds[lineIndex][charIndex].width + space;
+          } else {
+            currentLineHeight += this.__charBounds[lineIndex][charIndex].height + space;
+          }
         }
-        // currentLineHeight += this.getHeightOfChar(lineIndex, charIndex) + space;
       }
       if (currentLineHeight > longestLine) {
         longestLine = currentLineHeight;
@@ -247,9 +277,6 @@ export default class CJKTextbox extends fabric.IText {
     for (var i = 0; i < charIndex; i++) {
       charBox = this.__charBounds[lineIndex][i];
       if (this._isLatin(this._textLines[lineIndex][i])) {
-        // console.log(this._textLines[lineIndex])
-        // console.log('[x] char', this._textLines[lineIndex][i])
-        this.missingNewlineOffset(i - 1) && console.log(charBox.width)
         topOffset += charBox.width;
       } else {
         topOffset += charBox.height;
@@ -263,7 +290,7 @@ export default class CJKTextbox extends fabric.IText {
     }
     boundaries = {
       top: lineLeftOffset + (topOffset > 0 ? topOffset : 0),
-      left: leftOffset,
+      left: leftOffset + 3,
     };
     if (this.direction === 'rtl') {
       boundaries.left *= -1;
@@ -317,8 +344,12 @@ export default class CJKTextbox extends fabric.IText {
         }
         else {
           var charSpacing = this._getWidthOfCharSpacing();
-          boxEnd = this.__charBounds[endLine][endChar - 1].top
-            + this.__charBounds[endLine][endChar].height - charSpacing;
+          boxEnd = this.__charBounds[endLine][endChar - 1].top - charSpacing;
+          if (this._isLatin(this._textLines[endLine][endChar])) {
+            boxEnd += this.__charBounds[endLine][endChar].width;
+          } else {
+            boxEnd += this.__charBounds[endLine][endChar].height;
+          }
         }
       }
       var drawStart = boundaries.left + lineHeight * i,
@@ -366,7 +397,7 @@ export default class CJKTextbox extends fabric.IText {
     ctx.globalAlpha = this.__isMousedown ? 1 : this._currentCursorOpacity;
     ctx.fillRect(
       boundaries.left + boundaries.leftOffset - charHeight,
-      topOffset + boundaries.top + dy - this.lineHeight,
+      topOffset + boundaries.top + dy,
       charHeight,
       cursorWidth,
     );
