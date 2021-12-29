@@ -2,36 +2,55 @@ import { fabric } from 'fabric'
 
 const LATIN_CHARS_REGX = /[a-zA-Z\.\s]+/;
 const NUMBERIC_REGX = /[0-9]/;
-const BRACKETS_REGX = /[\(\)]/;
+const BRACKETS_REGX = /[\(\)\]\[\{\}\]]/;
 const JP_BRACKETS = /[ー「」『』（）〔〕［］｛｝｟｠〈〉《》【】〖〗〘〙〚〛゛゜。、・゠＝〜…•‥◦﹅﹆]/;
-export default class CJKTextbox extends fabric.IText {
+class VerticalTextbox extends fabric.IText {
   textAlign = 'right';
   direction = 'rtl';
-  typeObject = 'cjk-vertical'
+  type = 'vertical-textbox'
+  typeObject = 'vertical-textbox'
 
   initDimensions() {
     this.textAlign = 'right';
     this.direction = 'rtl';
+    this.keysMapRtl = {
+      ...this.keysMapRtl,
+      33: 'moveCursorLeft',
+      34: 'moveCursorDown',
+      35: 'moveCursorUp',
+      36: 'moveCursorRight',
+      37: 'moveCursorDown',
+      38: 'moveCursorLeft',
+      39: 'moveCursorUp',
+      40: 'moveCursorRight',
+    };
     return super.initDimensions.call(this)
   }
+
+  static fromObject(object, callback) {
+    const objectCopy = fabric.util.object.clone(object);
+    delete objectCopy.path;
+    return fabric.Object._fromObject('VerticalTextbox', objectCopy, function (textInstance) {
+      callback(textInstance);
+    }, 'vertical-textbox');
+  };
 
   _renderTextCommon(ctx, method) {
     ctx.save();
     var lineHeights = 0, left = this._getLeftOffset(), top = this._getTopOffset();
     for (var i = 0, len = this._textLines.length; i < len; i++) {
-      if (!this.__charBounds[i]) {
-        this.measureLine(i)
-      }
-      var heightOfLine = this.getHeightOfLine(i);
+
+      !this.__charBounds[i] && this.measureLine(i);
+
       this._renderTextLine(
         method,
         ctx,
         this._textLines[i],
         left - lineHeights,
-        top,
+        top + this._getLineLeftOffset(i),
         i
       );
-      lineHeights += heightOfLine;
+      lineHeights += this.getHeightOfLine(i);
     }
     ctx.restore();
   }
@@ -55,7 +74,7 @@ export default class CJKTextbox extends fabric.IText {
 
     if (JP_BRACKETS.test(char)) {
       const tx = charLeft - charbox.width / 2,
-        ty = charTop - charbox.height / 2 + 3; // somehow, the char is a bit higher after rotation;
+        ty = charTop - charbox.height / 2; // somehow, the char is a bit higher after rotation;
       ctx.translate(tx, ty);
       ctx.rotate(-Math.PI / 2);
       ctx.translate(-tx, -ty);
@@ -82,39 +101,51 @@ export default class CJKTextbox extends fabric.IText {
   }
 
   _renderAlphaNumberic(method, ctx, lineIndex, startIndex, endIndex, left, top) {
-    let charsBox = { ...this.__charBounds[lineIndex][startIndex] },
+    let charBox = this.__charBounds[lineIndex][startIndex],
       chars = '',
-      localLineHeight = this.getHeightOfLine(lineIndex),
-      offsetLeft = charsBox.height,
       offsetTop = this.lineHeight,
-      leftDiff = localLineHeight / this.lineHeight - offsetLeft,
-      charLeft = left - leftDiff + Math.max(0, leftDiff - offsetLeft),
-      charTop = top + charsBox.top + offsetTop;
+      charLeft = left,
+      timeToRender,
+      actualStyle,
+      nextStyle,
+      charTop = top + charBox.top + offsetTop;
 
     for (let i = startIndex; i <= endIndex; i++) {
+      timeToRender = i === endIndex || this.charSpacing;
       chars += this._textLines[lineIndex][i];
-      charsBox.width = charsBox.width + this.__charBounds[lineIndex][i].width;
-      if (charsBox.height < this.__charBounds[lineIndex][i].height) {
-        charsBox.height = this.__charBounds[lineIndex][i].height;
-      }
-    }
 
-    ctx.save();
-    const tx = charLeft,
-      ty = charTop;
-    ctx.translate(tx, ty);
-    ctx.rotate(Math.PI / 2);
-    ctx.translate(-tx, -ty);
-    this._renderChar(method,
-      ctx,
-      lineIndex,
-      startIndex,
-      chars,
-      charLeft,
-      charTop + charsBox.height - 3,
-      0
-    );
-    ctx.restore();
+      if (!timeToRender) {
+        // if we have charSpacing, we render char by char
+        actualStyle = actualStyle || this.getCompleteStyleDeclaration(lineIndex, i);
+        nextStyle = this.getCompleteStyleDeclaration(lineIndex, i + 1);
+        timeToRender = this._hasStyleChanged(actualStyle, nextStyle);
+      }
+
+      if (timeToRender) {
+        ctx.save();
+        const tx = charLeft,
+          ty = charTop;
+        ctx.translate(tx, ty);
+        ctx.rotate(Math.PI / 2);
+        ctx.translate(-tx, -ty);
+        this._renderChar(method,
+          ctx,
+          lineIndex,
+          i,
+          chars,
+          charLeft,
+          charTop + charBox.height - 3,
+          0
+        );
+
+        chars = '';
+        charBox = this.__charBounds[lineIndex][i + 1];
+        charTop = top + charBox.top + offsetTop
+        actualStyle = nextStyle;
+        ctx.restore();
+      }
+
+    }
   }
 
   _renderChars(method, ctx, line, left, top, lineIndex) {
@@ -123,9 +154,7 @@ export default class CJKTextbox extends fabric.IText {
       endChar = null;
     ctx.save();
     for (var i = 0, len = line.length - 1; i <= len; i++) {
-      if (!this._isLatin(line[i])) {
-        this._renderCJKChars(method, ctx, lineIndex, i, left, top);
-      } else {
+      if (this._isLatin(line[i])) {
         timeToRender = (i === len || !this._isLatin(line[i + 1]));
         if (startChar === null && this._isLatin(line[i])) {
           startChar = i;
@@ -137,13 +166,11 @@ export default class CJKTextbox extends fabric.IText {
           startChar = null;
           endChar = null;
         }
+      } else {
+        this._renderCJKChars(method, ctx, lineIndex, i, left, top);
       }
     }
     ctx.restore();
-  }
-
-  _willCharRotate(char) {
-    return JP_BRACKETS.test(char) || this._isLatin(char);
   }
 
   _isLatin(char) {
@@ -158,8 +185,10 @@ export default class CJKTextbox extends fabric.IText {
     let longestLine = 0,
       currentLineHeight = 0,
       char,
+      charBox,
       space = 0;
 
+    console.log('[x] this', this)
     if (this.charSpacing !== 0) {
       space = this._getWidthOfCharSpacing();
     }
@@ -170,11 +199,12 @@ export default class CJKTextbox extends fabric.IText {
       currentLineHeight = 0;
       for (let charIndex = 0, rlen = this._textLines[lineIndex].length; charIndex < rlen; charIndex++) {
         char = this._textLines[lineIndex][charIndex];
+        charBox = this.__charBounds[lineIndex][charIndex];
         if (char) {
           if (this._isLatin(char)) {
-            currentLineHeight += this.__charBounds[lineIndex][charIndex].width + space;
+            currentLineHeight += charBox.width + space;
           } else {
-            currentLineHeight += this.__charBounds[lineIndex][charIndex].height + space;
+            currentLineHeight += charBox.height + space;
           }
         }
       }
@@ -182,7 +212,7 @@ export default class CJKTextbox extends fabric.IText {
         longestLine = currentLineHeight;
       }
     }
-    return longestLine;
+    return longestLine + this.cursorWidth;
   }
 
   getSelectionStartFromPointer(e) {
@@ -234,6 +264,7 @@ export default class CJKTextbox extends fabric.IText {
         break;
       }
     }
+
     return this._getNewSelectionStartFromOffset(mouseOffset, prevHeight, height, charIndex, jlen);
   }
 
@@ -290,7 +321,7 @@ export default class CJKTextbox extends fabric.IText {
     }
     boundaries = {
       top: lineLeftOffset + (topOffset > 0 ? topOffset : 0),
-      left: leftOffset + 3,
+      left: leftOffset,
     };
     if (this.direction === 'rtl') {
       boundaries.left *= -1;
@@ -299,10 +330,10 @@ export default class CJKTextbox extends fabric.IText {
     this.cursorOffsetCache = boundaries;
     return this.cursorOffsetCache;
   }
-
   _getGraphemeBox(grapheme, lineIndex, charIndex, prevGrapheme, skipLeft) {
     let box = super._getGraphemeBox(grapheme, lineIndex, charIndex, prevGrapheme, skipLeft);
     box.top = 0;
+    box.height = Number(box.height)
 
     if (charIndex > 0 && !skipLeft) {
       const previousBox = this.__charBounds[lineIndex][charIndex - 1];
@@ -333,7 +364,7 @@ export default class CJKTextbox extends fabric.IText {
         boxStart = 0, boxEnd = 0;
 
       if (i === startLine) {
-        boxStart = this.__charBounds[startLine][startChar].top;
+        boxStart = this.__charBounds[startLine][startChar].top + 3;
       }
       if (i >= startLine && i < endLine) {
         boxEnd = isJustify && !this.isEndOfWrapping(i) ? this.height : this.getLineWidth(i) || 5; // WTF is this 5?
@@ -353,7 +384,8 @@ export default class CJKTextbox extends fabric.IText {
           }
         }
       }
-      var drawStart = boundaries.left + lineHeight * i,
+
+      let drawStart = boundaries.left - boundaries.leftOffset,
         drawWidth = lineHeight,
         drawHeight = boxEnd - boxStart;
 
@@ -375,6 +407,7 @@ export default class CJKTextbox extends fabric.IText {
         drawWidth,
         drawHeight,
       );
+      boundaries.leftOffset -= lineHeight;
     }
   }
 
@@ -383,21 +416,31 @@ export default class CJKTextbox extends fabric.IText {
     var cursorLocation = this.get2DCursorLocation(),
       lineIndex = cursorLocation.lineIndex,
       charIndex = cursorLocation.charIndex > 0 ? cursorLocation.charIndex - 1 : 0,
+      charBox = this.__charBounds[lineIndex][charIndex],
       charHeight = this.getValueOfPropertyAt(lineIndex, charIndex, 'fontSize'),
       multiplier = this.scaleX * this.canvas.getZoom(),
       cursorWidth = this.cursorWidth / multiplier,
       topOffset = boundaries.topOffset,
+      drawStart = boundaries.left - boundaries.leftOffset + charHeight,
+      deltaY = this._fontSizeMult * charBox.width - charBox.width,
       dy = this.getValueOfPropertyAt(lineIndex, charIndex, 'deltaY');
-    topOffset += (1 - this._fontSizeFraction) * this.getHeightOfLine(lineIndex) / this.lineHeight
-      - charHeight * (1 - this._fontSizeFraction);
+
+    if (!this._isLatin(this._textLines[lineIndex][charIndex])) {
+      deltaY = this.getHeightOfLine(lineIndex) / this.lineHeight - charHeight;
+    }
+
+    topOffset += (1 - this._fontSizeFraction) * deltaY * (1 - this._fontSizeFraction);
 
     if (this.inCompositionMode) {
       this.renderSelection(boundaries, ctx);
     }
+    if (this.direction === 'rtl') {
+      drawStart = this.width - drawStart - cursorWidth;
+    }
     ctx.fillStyle = this.cursorColor || this.getValueOfPropertyAt(lineIndex, charIndex, 'fill');
     ctx.globalAlpha = this.__isMousedown ? 1 : this._currentCursorOpacity;
     ctx.fillRect(
-      boundaries.left + boundaries.leftOffset - charHeight,
+      drawStart,
       topOffset + boundaries.top + dy,
       charHeight,
       cursorWidth,
@@ -571,3 +614,5 @@ export default class CJKTextbox extends fabric.IText {
     this._removeShadow(ctx);
   }
 }
+
+export default VerticalTextbox;
