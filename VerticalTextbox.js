@@ -122,8 +122,9 @@ class VerticalTextbox extends fabric.IText {
     drawLeft = drawLeft - widthFactor / 2;
     drawTop = drawTop + heightFactor;
     ctx.save();
-    const tx = drawLeft + drawWidth / 2 - charBox.height / 4 + charBox.height / 8,
-      ty = drawTop - charBox.height / 2 + charBox.height / 4 + charBox.height / 8;
+    const _boxHeight = charBox.height;
+    const tx = drawLeft + drawWidth / 2 - _boxHeight / 8,
+      ty = drawTop - _boxHeight / 8;
     ctx.translate(tx, ty);
     ctx.rotate(Math.PI / 2);
     ctx.translate(-tx, -ty);
@@ -422,7 +423,7 @@ class VerticalTextbox extends fabric.IText {
       cursorWidth = this.cursorWidth / multiplier,
       topOffset = boundaries.topOffset,
       lineHeight = this.getHeightOfLine(lineIndex),
-      drawStart = boundaries.left - boundaries.leftOffset + lineHeight / this.lineHeight,
+      drawStart = boundaries.left - boundaries.leftOffset + (lineHeight / this.lineHeight + charBox.height) / 2,
       deltaY = this._fontSizeMult * charBox.width - charBox.width,
       dy = this.getValueOfPropertyAt(lineIndex, charIndex, 'deltaY');
 
@@ -430,13 +431,11 @@ class VerticalTextbox extends fabric.IText {
       deltaY = this.getHeightOfLine(lineIndex) / this.lineHeight - charHeight;
     }
 
-    topOffset += (1 - this._fontSizeFraction) * deltaY * (1 - this._fontSizeFraction);
-
     if (this.inCompositionMode) {
       this.renderSelection(boundaries, ctx);
     }
     if (this.direction === 'rtl') {
-      drawStart = this.width - drawStart - cursorWidth;
+      drawStart = this.width - drawStart;
     }
     ctx.fillStyle = this.cursorColor || this.getValueOfPropertyAt(lineIndex, charIndex, 'fill');
     ctx.globalAlpha = this.__isMousedown ? 1 : this._currentCursorOpacity;
@@ -562,7 +561,7 @@ class VerticalTextbox extends fabric.IText {
         _size = this.getHeightOfChar(i, j);
         _dy = this.getValueOfPropertyAt(i, j, 'deltaY');
 
-        // (!lastDecoration) && (drawTop = charBox.top);
+        (!lastDecoration) && (drawTop = charBox.top);
 
         if (
           (currentDecoration !== lastDecoration || currentFill !== lastFill || _size !== size || _dy !== dy)
@@ -600,6 +599,7 @@ class VerticalTextbox extends fabric.IText {
       }
       ctx.fillStyle = currentFill;
       if (currentDecoration && currentFill) {
+        console.log('[x] leftOffset', this.left, leftOffset)
         ctx.fillRect(
           leftOffset - drawLeft + _size * offsetY,
           topOffset + drawTop,

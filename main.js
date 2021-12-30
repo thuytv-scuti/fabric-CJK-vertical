@@ -55,14 +55,18 @@ function updateStyles() {
 window.addEventListener('keydown', (kbEvt) => {
   if (kbEvt.ctrlKey) {
     let isHandled = false;
-    const randomColor = Math.floor(Math.random() * 16777215).toString(16);
     // style.fontFamily = 'gothic'
     // style.fontSize = 50;
     // style.linethrough = true;
     // style.overline = true;
-    // style.textBackgroundColor = '#' + randomColor;
     if (kbEvt.code === 'KeyB') {
       style.fontWeight = style.fontWeight === 'bold' ? 'normal' : 'bold';
+      updateStyles();
+      isHandled = true;
+    }
+
+    if (kbEvt.code === 'Digit0') {
+      style.textBackgroundColor = '#' + Math.floor(Math.random() * 16777215).toString(16);
       updateStyles();
       isHandled = true;
     }
