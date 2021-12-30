@@ -49,6 +49,31 @@ class VerticalTextbox extends fabric.IText {
     }, 'vertical-textbox');
   };
 
+  toTextbox(callback) {
+    const objectCopy = fabric.util.object.clone(this.toObject());
+    delete objectCopy.path;
+    objectCopy.direction = 'ltr';
+    objectCopy.textAlign = 'left';
+    delete objectCopy.minHeight;
+    return fabric.Object._fromObject('Textbox', objectCopy, function (textbox) {
+      textbox.type = 'text';
+      textbox.typeObject = 'textbox';
+      callback(textbox);
+    }, 'text');
+  }
+
+  static fromTextbox(textbox, callback) {
+    const objectCopy = fabric.util.object.clone(textbox.toObject());
+    delete objectCopy.path;
+    return fabric.Object._fromObject('VerticalTextbox', objectCopy, function (textInstance) {
+      textInstance.textAlign = 'right';
+      textInstance.direction = 'rtl';
+      textInstance.type = 'vertical-textbox';
+      textInstance.typeObject = 'vertical-textbox';
+      callback(textInstance);
+    }, 'vertical-textbox');
+  }
+
   _renderTextCommon(ctx, method) {
     ctx.save();
     var lineHeights = 0, left = this._getLeftOffset(), top = this._getTopOffset();
@@ -561,7 +586,6 @@ class VerticalTextbox extends fabric.IText {
           (currentDecoration !== lastDecoration || currentFill !== lastFill || _size !== size || _dy !== dy)
           && boxWidth > 0
         ) {
-          console.log(this.lineHeight)
           if (lastDecoration && lastFill) {
             ctx.fillStyle = lastFill;
             ctx.fillRect(
