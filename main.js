@@ -4,7 +4,7 @@ import VerticalTextbox from './VerticalTextbox';
 
 const canvas = new fabric.Canvas('c');
 // const text = '熊玩\nヌ日池」極健リ\nabc\nhello))健 1234 名８食ー教策12ぜ'
-const text = '(abc)こbracket]日「ム」極ー右';
+const text = '(abc)こbra\ncket]日「ム」\n極ー右';
 
 let style = {
   "fill": "#292929",
@@ -17,7 +17,7 @@ let style = {
   "fontFamily": "gothic",
   "left": 100,
   "top": 50,
-  lineHeight: 3,
+  lineHeight: 5,
   linethrough: false,
   overline: false,
 };
@@ -39,7 +39,7 @@ const textbox = new fabric.Textbox(text, Object.assign(style, {
 }));
 
 canvas.add(cjkText)
-canvas.add(textbox)
+// canvas.add(textbox)
 
 function updateStyles() {
   if (cjkText.isEditing) {
