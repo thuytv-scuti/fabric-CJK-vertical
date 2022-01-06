@@ -1,8 +1,10 @@
 import './style.css'
 import { fabric } from 'fabric'
 import VerticalTextbox from './VerticalTextbox';
+import Canvas from './Canvas';
 
-const canvas = new fabric.Canvas('c');
+const canvas = new Canvas('c');
+const btnFlip = document.getElementById('ButtonFlip');
 // const text = '熊玩\nヌ日池」極健リ\nabc\nhello))健 1234 名８食ー教策12ぜ'
 const text = '(abc)こbra\ncket]日「ム」\n極ー右';
 
@@ -38,6 +40,25 @@ const textbox = new fabric.Textbox(text, Object.assign(style, {
   left: 500
 }));
 
+function handleTextFlipped(txtbox, originTxtBox) {
+  const originIndex = canvas.getObjects().indexOf(originTxtBox);
+  canvas.startEditing();
+  canvas.insertAt(txtbox, originIndex, true);
+  canvas.stopEditing();
+  canvas.setActiveObject(txtbox);
+}
+
+btnFlip.onclick = () => {
+  const activeObject = canvas.getActiveObject();
+  console.log('[x] active-objects', activeObject);
+
+  if (activeObject.type === 'vertical-textbox') {
+    activeObject.toTextbox(txtbox => handleTextFlipped(txtbox, activeObject))
+  } else if (activeObject.type === 'textbox') {
+    VerticalTextbox.fromTextbox(activeObject, txtbox => handleTextFlipped(txtbox, activeObject))
+  }
+}
+
 canvas.add(cjkText)
 // canvas.add(textbox)
 
@@ -55,6 +76,14 @@ function updateStyles() {
 window.addEventListener('keydown', (kbEvt) => {
   if (kbEvt.ctrlKey) {
     let isHandled = false;
+
+    if (kbEvt.code === 'KeyZ') {
+      if (kbEvt.shiftKey) {
+        canvas.redo();
+      } else {
+        canvas.undo();
+      }
+    }
     // style.fontFamily = 'gothic'
     // style.fontSize = 50;
     // style.linethrough = true;

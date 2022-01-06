@@ -56,8 +56,8 @@ class VerticalTextbox extends fabric.IText {
     objectCopy.textAlign = 'left';
     delete objectCopy.minHeight;
     return fabric.Object._fromObject('Textbox', objectCopy, function (textbox) {
-      textbox.type = 'text';
-      textbox.typeObject = 'textbox';
+      textbox.type = 'textbox';
+      textbox.typeObject = 'text';
       callback(textbox);
     }, 'text');
   }
